@@ -35,22 +35,22 @@ if 'ratings' not in st.session_state:
 if 'model' not in st.session_state:
     st.session_state.model = EfficientNetB0(weights='imagenet', include_top=True)
 
-# Using more reliable image URLs
+# Using stable image URLs from Wikipedia
 DOGS = [
     {
         "id": 1,
         "breed": "Golden Retriever",
-        "image_url": "https://i.pinimg.com/564x/7f/26/e7/7f26e71b2c84e6b16d4f6d3fd8a58bca.jpg"
+        "image_url": "https://upload.wikimedia.org/wikipedia/commons/b/bd/Golden_Retriever_Dukedestiny01_drvd.jpg"
     },
     {
         "id": 2,
-        "breed": "Corgi",
-        "image_url": "https://raw.githubusercontent.com/jigsawpieces/dog-api-images/main/cardigan-corgi/n02113186_1030.jpg"
+        "breed": "Welsh Corgi",
+        "image_url": "https://upload.wikimedia.org/wikipedia/commons/2/2b/WelshCorgi.jpeg"
     },
     {
         "id": 3,
-        "breed": "Husky",
-        "image_url": "https://raw.githubusercontent.com/jigsawpieces/dog-api-images/main/husky/n02110185_1469.jpg"
+        "breed": "Siberian Husky",
+        "image_url": "https://upload.wikimedia.org/wikipedia/commons/d/dd/Le%C3%AFko_au_bois_de_la_Cambre.jpg"
     }
 ]
 
@@ -58,23 +58,16 @@ def load_and_preprocess_image(image_url):
     """Load and preprocess image for EfficientNet with better error handling"""
     try:
         response = requests.get(image_url, timeout=10)
-        response.raise_for_status()  # Raise an error for bad status codes
+        response.raise_for_status()
         
-        # Open image with explicit format detection
         image_data = BytesIO(response.content)
-        img = Image.open(image_data).convert('RGB')  # Convert to RGB to ensure compatibility
-        
-        # Resize with antialiasing
+        img = Image.open(image_data).convert('RGB')
         img = img.resize((224, 224), Image.Resampling.LANCZOS)
         
-        # Convert to array and preprocess
         img_array = np.array(img)
         img_array = tf.keras.applications.efficientnet.preprocess_input(img_array)
         return np.expand_dims(img_array, axis=0)
     
-    except requests.exceptions.RequestException as e:
-        st.error(f"Failed to fetch image: {str(e)}")
-        return None
     except Exception as e:
         st.error(f"Error processing image: {str(e)}")
         return None
@@ -85,21 +78,27 @@ def predict_cuteness(img_array):
         return 0.0
     try:
         predictions = st.session_state.model.predict(img_array, verbose=0)
-        # Using top-5 average confidence as cuteness score
         top_5_mean = np.mean(np.sort(predictions[0])[-5:])
         return float(top_5_mean)
     except Exception as e:
         st.error(f"Prediction error: {str(e)}")
         return 0.0
 
-def handle_rating(is_cute):
-    """Handle user rating and move to next dog"""
-    current_dog = DOGS[st.session_state.current_index]
-    st.session_state.ratings[current_dog['id']] = is_cute
-    
+def move_to_next():
+    """Update session state for next dog"""
     if st.session_state.current_index < len(DOGS) - 1:
         st.session_state.current_index += 1
-    st.experimental_rerun()
+
+def handle_rating(is_cute):
+    """Handle user rating"""
+    current_dog = DOGS[st.session_state.current_index]
+    st.session_state.ratings[current_dog['id']] = is_cute
+    move_to_next()
+
+def reset_app():
+    """Reset the app state"""
+    st.session_state.current_index = 0
+    st.session_state.ratings = {}
 
 def show_results():
     """Display rating results"""
@@ -108,7 +107,6 @@ def show_results():
     st.markdown("## 🎉 Rating Complete!")
     st.markdown(f"### You found {cute_count} out of {len(DOGS)} dogs cute!")
     
-    # Display ratings summary
     results_df = pd.DataFrame([
         {
             'Breed': DOGS[i]['breed'],
@@ -119,9 +117,7 @@ def show_results():
     st.dataframe(results_df, hide_index=True)
     
     if st.button("Rate More Dogs", key='restart'):
-        st.session_state.current_index = 0
-        st.session_state.ratings = {}
-        st.experimental_rerun()
+        reset_app()
 
 def main():
     st.title("🐕 Cute Dog Ranker")
