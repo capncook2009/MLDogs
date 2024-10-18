@@ -15,7 +15,7 @@ st.set_page_config(
     layout="centered"
 )
 
-# Custom CSS for better styling
+# Custom CSS
 st.markdown("""
     <style>
     .stButton>button {
@@ -23,14 +23,6 @@ st.markdown("""
         border-radius: 20px;
         height: 50px;
         margin-top: 10px;
-    }
-    .cute-button>button {
-        background-color: #ff4b6e;
-        color: white;
-    }
-    .skip-button>button {
-        border: 1px solid #gray;
-        background-color: white;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -43,39 +35,62 @@ if 'ratings' not in st.session_state:
 if 'model' not in st.session_state:
     st.session_state.model = EfficientNetB0(weights='imagenet', include_top=True)
 
-# Sample dog dataset
+# Using more reliable image URLs
 DOGS = [
     {
         "id": 1,
         "breed": "Golden Retriever",
-        "image_url": "https://images.dog.ceo/breeds/retriever-golden/n02099601_1024.jpg"
+        "image_url": "https://raw.githubusercontent.com/jigsawpieces/dog-api-images/main/golden-retriever/n02099601_1024.jpg"
     },
     {
         "id": 2,
         "breed": "Corgi",
-        "image_url": "https://images.dog.ceo/breeds/corgi-cardigan/n02113186_1030.jpg"
+        "image_url": "https://raw.githubusercontent.com/jigsawpieces/dog-api-images/main/cardigan-corgi/n02113186_1030.jpg"
     },
     {
         "id": 3,
         "breed": "Husky",
-        "image_url": "https://images.dog.ceo/breeds/husky/n02110185_1469.jpg"
+        "image_url": "https://raw.githubusercontent.com/jigsawpieces/dog-api-images/main/husky/n02110185_1469.jpg"
     }
 ]
 
 def load_and_preprocess_image(image_url):
-    """Load and preprocess image for EfficientNet"""
-    response = requests.get(image_url)
-    img = Image.open(BytesIO(response.content))
-    img = img.resize((224, 224))
-    img_array = image.img_to_array(img)
-    img_array = tf.keras.applications.efficientnet.preprocess_input(img_array)
-    return np.expand_dims(img_array, axis=0)
+    """Load and preprocess image for EfficientNet with better error handling"""
+    try:
+        response = requests.get(image_url, timeout=10)
+        response.raise_for_status()  # Raise an error for bad status codes
+        
+        # Open image with explicit format detection
+        image_data = BytesIO(response.content)
+        img = Image.open(image_data).convert('RGB')  # Convert to RGB to ensure compatibility
+        
+        # Resize with antialiasing
+        img = img.resize((224, 224), Image.Resampling.LANCZOS)
+        
+        # Convert to array and preprocess
+        img_array = np.array(img)
+        img_array = tf.keras.applications.efficientnet.preprocess_input(img_array)
+        return np.expand_dims(img_array, axis=0)
+    
+    except requests.exceptions.RequestException as e:
+        st.error(f"Failed to fetch image: {str(e)}")
+        return None
+    except Exception as e:
+        st.error(f"Error processing image: {str(e)}")
+        return None
 
 def predict_cuteness(img_array):
     """Predict cuteness score using EfficientNet"""
-    predictions = st.session_state.model.predict(img_array)
-    # Using max confidence as a proxy for cuteness
-    return float(predictions.max())
+    if img_array is None:
+        return 0.0
+    try:
+        predictions = st.session_state.model.predict(img_array, verbose=0)
+        # Using top-5 average confidence as cuteness score
+        top_5_mean = np.mean(np.sort(predictions[0])[-5:])
+        return float(top_5_mean)
+    except Exception as e:
+        st.error(f"Prediction error: {str(e)}")
+        return 0.0
 
 def handle_rating(is_cute):
     """Handle user rating and move to next dog"""
@@ -103,7 +118,7 @@ def show_results():
     ])
     st.dataframe(results_df, hide_index=True)
     
-    if st.button("Rate More Dogs"):
+    if st.button("Rate More Dogs", key='restart'):
         st.session_state.current_index = 0
         st.session_state.ratings = {}
         st.experimental_rerun()
@@ -123,37 +138,31 @@ def main():
     st.progress((st.session_state.current_index) / len(DOGS))
     st.markdown(f"Dog {st.session_state.current_index + 1} of {len(DOGS)}")
 
-    # Display current dog
-    col1, col2, col3 = st.columns([1,3,1])
-    with col2:
-        st.image(
-            current_dog['image_url'],
-            caption=current_dog['breed'],
-            use_column_width=True
-        )
-
-    # Get model prediction
+    # Display current dog with error handling
     try:
+        response = requests.get(current_dog['image_url'])
+        img = Image.open(BytesIO(response.content))
+        st.image(img, caption=current_dog['breed'], use_column_width=True)
+        
+        # Get model prediction
         img_array = load_and_preprocess_image(current_dog['image_url'])
-        cuteness_score = predict_cuteness(img_array)
-        st.markdown(f"AI Cuteness Score: {cuteness_score:.2%}")
+        if img_array is not None:
+            cuteness_score = predict_cuteness(img_array)
+            st.markdown(f"AI Cuteness Score: {cuteness_score:.2%}")
+    
     except Exception as e:
-        st.error(f"Error processing image: {str(e)}")
-        cuteness_score = 0
+        st.error(f"Error loading image: {str(e)}")
+        st.markdown("⚠️ Image temporarily unavailable")
 
     # Rating buttons
     col1, col2 = st.columns(2)
     with col1:
-        st.markdown('<div class="skip-button">', unsafe_allow_html=True)
-        if st.button("👎 Skip"):
+        if st.button("👎 Skip", key=f"skip_{current_dog['id']}"):
             handle_rating(False)
-        st.markdown('</div>', unsafe_allow_html=True)
     
     with col2:
-        st.markdown('<div class="cute-button">', unsafe_allow_html=True)
-        if st.button("❤️ Cute!"):
+        if st.button("❤️ Cute!", key=f"cute_{current_dog['id']}"):
             handle_rating(True)
-        st.markdown('</div>', unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
