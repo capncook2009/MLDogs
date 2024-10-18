@@ -100,7 +100,7 @@ def reset_app():
     st.session_state.current_index = 0
     st.session_state.ratings = {}
 
-@tf.function
+@tf.function(reduce_retracing=True)
 def show_results():
     """Display rating results"""
     cute_count = sum(1 for r in st.session_state.ratings.values() if r)
