@@ -40,7 +40,7 @@ DOGS = [
     {
         "id": 1,
         "breed": "Golden Retriever",
-        "image_url": "https://raw.githubusercontent.com/jigsawpieces/dog-api-images/main/golden-retriever/n02099601_1024.jpg"
+        "image_url": "https://i.pinimg.com/564x/7f/26/e7/7f26e71b2c84e6b16d4f6d3fd8a58bca.jpg"
     },
     {
         "id": 2,
